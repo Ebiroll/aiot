@@ -1,5 +1,12 @@
-# This repository contins 
+# Content
 
+This repository contains information of speech recognition and aiot
+
+Most notably it contains information regarding the sipeed
+
+https://www.seeedstudio.com/sipeed
+
+https://github.com/espressif/esp-adf/issues/73
 
 # esp32-msc
 
