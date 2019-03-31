@@ -405,6 +405,10 @@ bin_mdef_read(cmd_ln_t *config, const char *filename)
         E_WARN("-mmap specified, but mdef is other-endian.  Will not memory-map.\n");
         do_mmap = FALSE;
     } 
+
+    // OLAS! No mmap available
+     do_mmap = FALSE;
+
     /* Actually try to mmap it. */
     if (do_mmap) {
         m->filemap = mmio_file_read(filename);

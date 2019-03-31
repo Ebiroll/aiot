@@ -1,0 +1,6 @@
+#JSGF V1.0;
+
+grammar all;
+
+public <all> =  ( turn ( on | off ) | flash)  light ( one |two | three | four | five | six | seven | eight | nine );
+

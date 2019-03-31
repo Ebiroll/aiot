@@ -89,7 +89,9 @@ acmod_init_am(acmod_t *acmod)
     /* Read transition matrices. */
     if ((tmatfn = cmd_ln_str_r(acmod->config, "_tmat")) == NULL) {
         E_ERROR("No tmat file specified\n");
-        return -1;
+        tmatfn="/sdcard/en-us/en-us/transition_matrices";
+        //      /sdcard/en-us/en-us/transition_matrices
+        return 0;
     }
     acmod->tmat = tmat_init(tmatfn, acmod->lmath,
                             cmd_ln_float32_r(acmod->config, "-tmatfloor"),

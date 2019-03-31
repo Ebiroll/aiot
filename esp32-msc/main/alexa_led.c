@@ -31,6 +31,10 @@
 #include "filter_resample.h"
 #include "esp_sr_iface.h"
 #include "esp_sr_models.h"
+#include "periph_sdcard.h"
+
+#include <sphinxbase/err.h>
+#include "pocketsphinx.h"
 
 static const char *TAG = "CHECK_ESP32-LyraTD-MSC_LEDs";
 
@@ -48,13 +52,175 @@ typedef enum {
     PLAY_LOCAL_MUSIC,
 } asr_event_t;
 
+static ps_decoder_t *ps;
+static cmd_ln_t *ps_config;
+	
+//	char **params;
+//	int params_len;
+
+
+static const arg_t cont_args_def[] =
+{
+    POCKETSPHINX_OPTIONS,
+    /* Argument file. */
+    {"-argfile", ARG_STRING, NULL, "Argument file giving extra arguments."},
+    {"-adcdev", ARG_STRING, NULL, "Name of audio device to use for input."},
+    {"-infile", ARG_STRING, NULL, "Audio file to transcribe."},
+    {"-time", ARG_BOOLEAN, "no", "Print word times in file transcription."},
+    CMDLN_EMPTY_OPTION
+};
+
+void init_ps()  {
+    // "-infile","/sdcard/dummy.txt",
+    //  en-us-phone.lm.bin
+    // cmudict-en-us.dict
+	char *argv[]={"pocketsphinx","-hmm","/sdcard/en-us/en-us","-dict","/sdcard/en-us/limited.dict","-jsgf","/sdcard/simple.jsfg"
+    //,"_tmat" ,"/sdcard/en-us/en-us/transition_matrices"
+    };
+	int argc=sizeof(argv)/sizeof(argv[0]);
+	
+	int all_params_len=(argc);
+    /*
+	char **all_params=malloc(all_params_len*sizeof(char*));
+	
+	for(int i=0;i<argc;i++)
+	{
+		all_params[i]=argv[i];
+	}
+	*/
+
+	for(int i=0;i<all_params_len;i++)
+	{
+		printf("PARAM:: %d %s\n",i,argv[i]);
+	}
+	
+	ps_config = cmd_ln_parse_r(NULL, cont_args_def, all_params_len, argv /*all_params*/, TRUE);
+
+	//free(all_params);
+	
+
+	/* Handle argument file as -argfile. 
+	if(self->config && (cfg = cmd_ln_str_r(self->config, "-argfile")) != NULL)
+	{
+		self->config = cmd_ln_parse_file_r(self->config, cont_args_def, cfg, FALSE);
+	}
+
+	if(self->config == NULL || (cmd_ln_str_r(self->config, "-infile") == NULL))
+	{
+		E_INFO("Specify '-infile <file.wav>' to recognize from file\n");
+		cmd_ln_free_r(self->config);
+		return NULL;
+	}
+    */
+
+	ps_default_search_args(ps_config);
+	ps = ps_init(ps_config);
+	if(ps == NULL)
+	{
+        cmd_ln_free_r(ps_config);
+        printf("FAILED to initialize pocketsphinx!\n");
+    }
+
+}
+
+int readFile(char *buf, int len)
+{
+    static FILE *file;
+    if (file == NULL) {
+        file = fopen("/sdcard/test.mp3", "r");
+        if (!file) {
+            printf("Error opening file\n");
+            return -1;
+        }
+    }
+    int read_len = fread(buf, 1, len, file);
+    if (read_len == 0) {
+        read_len = AEL_IO_DONE;
+    }
+    return read_len;
+}
+
+
+/*
+ * Main utterance processing loop:
+ *     for (;;) {
+ *        start utterance and wait for speech to process
+ *        decoding till end-of-utterance silence will be detected
+ *        print utterance result;
+ *     }
+ */
+static void
+recognize_from_microphone(audio_element_handle_t raw_read,int audio_chunksize)
+{
+    //int16 adbuf[2048];
+    uint8 utt_started, in_speech;
+    char const *hyp;
+
+    int16_t *adbuf = (int16_t *)malloc(audio_chunksize * sizeof(short));
+
+    E_INFO("Ready....\n");
+
+    utt_started = TRUE;
+    while (utt_started == TRUE) {
+
+        raw_stream_read(raw_read, (char *)adbuf, audio_chunksize * sizeof(short));
+
+        //if ((k = ad_read(ad, adbuf, 2048)) < 0)
+        //    E_FATAL("Failed to read audio\n");
+        ps_process_raw(ps, adbuf, audio_chunksize, FALSE, FALSE);
+        in_speech = ps_get_in_speech(ps);
+        if (in_speech && !utt_started) {
+            utt_started = TRUE;
+            E_INFO("Listening...\n");
+        }
+        if (!in_speech && utt_started) {
+            /* speech -> silence transition, time to start new utterance  */
+            ps_end_utt(ps);
+            hyp = ps_get_hyp(ps, NULL );
+            if (hyp != NULL) {
+                printf("%s\n", hyp);
+                fflush(stdout);
+            }
+
+            if (ps_start_utt(ps) < 0)
+                E_FATAL("Failed to start utterance\n");
+            utt_started = FALSE;
+            E_INFO("Ready....\n");
+        }
+        //sleep_msec(100);
+    }
+
+    free(adbuf);
+}
+
 void app_main(void)
 {
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
+
+    ps = NULL;
+
     ESP_LOGI(TAG, "[ 1 ] Initialize peripherals");
     esp_periph_config_t periph_cfg = DEFAULT_ESP_PHERIPH_SET_CONFIG();
     esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
+
+    // Initialize SD Card peripheral
+    /*
+    periph_sdcard_cfg_t sdcard_cfg = {
+        .root = "/sdcard",
+        .card_detect_pin = get_sdcard_intr_gpio(), //GPIO_NUM_34
+    };
+    esp_periph_handle_t sdcard_handle = periph_sdcard_init(&sdcard_cfg);
+    // Start sdcard & button peripheral
+    esp_periph_start(set, sdcard_handle);
+
+    // Wait until sdcard is mounted
+    while (!periph_sdcard_is_mounted(sdcard_handle)) {
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+    */
+
+    //init_ps();
 
     ESP_LOGI(TAG, "[ 2 ] Initialize IS31fl3216 peripheral");
     periph_is31fl3216_cfg_t is31fl3216_cfg = { 0 };
@@ -83,6 +249,7 @@ void app_main(void)
         char *name = model->get_word_name(iface, i);
         ESP_LOGI(TAG, "keywords: %s (index = %d)", name, i);
     }
+
     float threshold = model->get_det_threshold_by_mode(iface, DET_MODE_90, 1);
     int sample_rate = model->get_samp_rate(iface);
     int audio_chunksize = model->get_samp_chunksize(iface);
@@ -162,8 +329,8 @@ void app_main(void)
                 if (led_index > 14){
                     led_index = 0;
                 }
-
-
+        
+                if (ps) recognize_from_microphone(raw_read,audio_chunksize);
                 break;
             case OPEN_THE_LIGHT:
                 ESP_LOGI(TAG, "Turn on the light");
@@ -179,15 +346,6 @@ void app_main(void)
                 break;
             case PLAY:
                 ESP_LOGI(TAG, "play");
-                break;
-            case PAUSE:
-                ESP_LOGI(TAG, "pause");
-                break;
-            case MUTE:
-                ESP_LOGI(TAG, "mute");
-                break;
-            case PLAY_LOCAL_MUSIC:
-                ESP_LOGI(TAG, "play local music");
                 break;
             default:
                 ESP_LOGD(TAG, "Not supported keyword");
